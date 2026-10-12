@@ -40,7 +40,7 @@ const swaggerOptions = {
     },
   },
   // Mivel a kódodban a 'routers' mappát hivatkoztad, itt is frissíteni kell az elérési utat
-  apis: ['./src/routers/*.js', './src/controllers/*.js'], 
+  apis: ['./routers/*.js', './controllers/*.js'], 
 };
 
 // OpenAPI dokumentum generálása és Swagger UI kiszolgálása

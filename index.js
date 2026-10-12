@@ -1,5 +1,5 @@
 // Környezeti változók betöltése ES modulként
-import 'dotenv/config'; 
+import 'dotenv/config';
 
 // Alapvető csomagok importálása
 import express from 'express';
@@ -7,12 +7,12 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import connectDB from './db/db.js';
 import morgan from 'morgan';
-
-
+import scanRoutes from './routers/scanRoutes.js';
 
 const app = express();
 app.use(express.json());
 app.use(morgan('dev')); // HTTP kérések logolása a konzolra
+
 // Swagger-jsdoc konfiguráció
 const swaggerOptions = {
   definition: {
@@ -37,24 +37,25 @@ const swaggerOptions = {
       },
     },
   },
-  // Mivel a kódodban a 'routers' mappát hivatkoztad, itt is frissíteni kell az elérési utat
-  apis: ['./src/routers/*.js', './src/controllers/*.js'], 
+  // A route-fájlok a projekt gyökerében lévő mappákban vannak
+  apis: ['./routers/*.js', './controllers/*.js'],
 };
 
 // OpenAPI dokumentum generálása és Swagger UI kiszolgálása
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// ÚJ SOR: Nyers OpenAPI JSON publikálása a biztonsági scanner számára
+// Nyers OpenAPI JSON publikálása a biztonsági scanner számára
 app.get('/api-docs.json', (req, res) => {
-    res.setHeader('Content-Type', 'application/json');
-    res.send(swaggerSpec);
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
 });
 
 // Routerek (végpontok) bekötése
+app.use('/api/scans', scanRoutes);
 
 app.get('/health', (req, res) => {
-    res.json({ status: "OwASP API Security Lab fut!" });
+  res.json({ status: 'OwASP API Security Lab fut!' });
 });
 
 const PORT = process.env.PORT || 3000;
@@ -62,19 +63,18 @@ const MONGODB_URI = process.env.MONGODB_URI;
 
 // Adatbázis csatlakozás és a szerver indítása
 const startServer = async () => {
-    try {
-        // Megvárjuk, amíg az adatbázis kapcsolat felépül
-        await connectDB(MONGODB_URI);
-        
-        // Csak sikeres DB kapcsolat után indítjuk az Express szervert
-        app.listen(PORT, () => {
-            console.log(`A szerver elindult a ${PORT}-es porton.`);
-            console.log(`API Dokumentáció: http://localhost:${PORT}/api-docs`);
-        });
-    } catch (error) {
-        console.error('Kritikus hiba induláskor:', error);
-        process.exit(1);
-    }
+  try {
+    // Megvárjuk, amíg az adatbázis kapcsolat felépül
+    await connectDB(MONGODB_URI);
+    // Csak sikeres DB kapcsolat után indítjuk az Express szervert
+    app.listen(PORT, () => {
+      console.log(`A szerver elindult a ${PORT}-es porton.`);
+      console.log(`API Dokumentáció: http://localhost:${PORT}/api-docs`);
+    });
+  } catch (error) {
+    console.error('Kritikus hiba induláskor:', error);
+    process.exit(1);
+  }
 };
 
 // Inicializálás

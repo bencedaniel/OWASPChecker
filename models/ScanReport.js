@@ -6,7 +6,6 @@ const vulnerabilitySchema = new mongoose.Schema({
         type: String,
         required: true,
     },
-    
     endpoint: {
         type: String,
         required: true
@@ -26,7 +25,7 @@ const vulnerabilitySchema = new mongoose.Schema({
         type: String,
         enum: ['warning', 'danger'],
         required: true,
-        default: 'warning' 
+        default: 'warning'
     },
     description: {
         type: String
@@ -41,9 +40,11 @@ const scanReportSchema = new mongoose.Schema({
     targetUrl: {
         type: String,
         required: true,
+        trim: true
     },
     openApiSpecUrl: {
         type: String,
+        trim: true
     },
     status: {
         type: String,
@@ -65,6 +66,9 @@ const scanReportSchema = new mongoose.Schema({
     totalEndpointsScanned: {
         type: Number,
         default: 0
+    },
+    errorMessage: {
+        type: String // Sikertelen (failed) vizsgálat esetén az ok
     },
     vulnerabilities: [vulnerabilitySchema] // A beágyazott hibák tömbje
 }, { timestamps: true });

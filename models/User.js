@@ -27,16 +27,16 @@ const userSchema = new mongoose.Schema({
 
 userSchema.pre('save', async function (next) {
     if (!this.isModified('password')) {
-        return next();
+        return; // Ha a jelszó nem változott, ne hasheljük újra
     }
 
     try {
         // A 'salt' generálása (10-es költségfaktor bőségesen elég ide)
         const salt = await bcrypt.genSalt(10);
         this.password = await bcrypt.hash(this.password, salt);
-        next();
+        
     } catch (error) {
-        next(error);
+        throw new Error(error);
     }
 });
 

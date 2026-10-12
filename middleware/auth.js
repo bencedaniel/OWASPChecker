@@ -22,7 +22,6 @@ export const authenticateToken = (req, res, next) => {
 
 export const authenticateTokenVerifyAdmin = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    // Elvárjuk a "Bearer <token>" formátumot
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {

@@ -69,3 +69,24 @@ export const getScanById = async (req, res) => {
         res.status(400).json({ message: 'Érvénytelen azonosító.' });
     }
 };
+
+export const getScanByIdAdmin = async (req, res) => {
+    try {
+        const scan = await ScanReport.findById(req.params.id);
+        if (!scan) {
+            return res.status(404).json({ message: 'A vizsgálat nem található.' });
+        }
+        res.json(scan);
+    } catch (error) {
+        res.status(400).json({ message: 'Érvénytelen azonosító.' });
+    }
+};
+
+export const getAllScansAdmin = async (req, res) => {
+    try {
+        const scans = await ScanReport.find().sort({ createdAt: -1 });
+        res.json(scans);
+    } catch (error) {
+        res.status(500).json({ message: 'Hiba a vizsgálatok lekérdezésekor.', error: error.message });
+    }
+};

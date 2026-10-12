@@ -67,6 +67,9 @@ const scanReportSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    summary: {
+        type: String // Rövid összefoglaló a vizsgálat eredményéről
+    },
     errorMessage: {
         type: String // Sikertelen (failed) vizsgálat esetén az ok
     },

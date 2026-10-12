@@ -8,7 +8,7 @@
  * 
  * @param {Object} context - A vizsgálat globális kontextusa
  * @param {string} context.targetUrl - A vizsgált szerver alap URL-je (pl. "https://api.example.com")
- * @param {Object} context.spec - A teljes, letöltött OpenAPI specifikáció objektumként
+ * @param {Object} context.spec - A teljes, letöltött OpenAPI specifikáció objektumként (Ez a teljes szerverre vonatkozó leírás, amelyből az összes végpont kinyerhető)
  * 
  * @returns {Promise<Array<Object>>} Egy tömb, amely tartalmazza a megtalált sebezhetőségeket. 
  *                                   Ha nincs találat, KÖTELEZŐEN egy üres tömböt `[]` kell visszaadni!

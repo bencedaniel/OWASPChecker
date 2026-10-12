@@ -2,8 +2,6 @@ import ScanReport from '../models/ScanReport.js';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'];
 
-// Ide kerülnek majd a tesztmodulok (auth, BOLA, inputvalidáció, rate limit...).
-// Mindegyik: async (endpoint, context) => [vulnerability, ...]
 const checks = [];
 
 async function loadSpec(specUrl) {
@@ -48,6 +46,8 @@ export async function runScan(reportId) {
 
         report.vulnerabilities = findings;
         report.status = 'completed';
+        report.summary = `A vizsgálat befejeződött. ${findings.length} sebezhetőség található.
+         ${findings.count(f => f.confidence === 'danger')} kritikus, ${findings.count(f => f.confidence === 'warning')} figyelmeztetés.`;
     } catch (err) {
         report.status = 'failed';
         report.errorMessage = err.message;

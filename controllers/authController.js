@@ -3,7 +3,7 @@ import User from '../models/User.js';
 
 
 
-export const login = async (req, res) => {
+export const loginUser = async (req, res) => {
     const { username, password } = req.body;
 
     try {
@@ -30,7 +30,7 @@ export const login = async (req, res) => {
         res.status(500).json({ error: 'Szerverhiba a bejelentkezés során.' });
     }
 };
-export const register = async (req, res) => {
+export const registerUser = async (req, res) => {
     const { username, email, password, role } = req.body;
 
     try {

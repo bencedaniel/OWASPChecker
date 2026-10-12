@@ -7,6 +7,7 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import connectDB from './db/db.js';
 import morgan from 'morgan';
+import authRouter from './routers/authRouter.js';
 
 
 
@@ -37,8 +38,8 @@ const swaggerOptions = {
       },
     },
   },
-  // Mivel a kódodban a 'routers' mappát hivatkoztad, itt is frissíteni kell az elérési utat
-  apis: ['./src/routers/*.js', './src/controllers/*.js'], 
+
+  apis: ['./routers/*.js', './controllers/*.js'], 
 };
 
 // OpenAPI dokumentum generálása és Swagger UI kiszolgálása
@@ -52,6 +53,7 @@ app.get('/api-docs.json', (req, res) => {
 });
 
 // Routerek (végpontok) bekötése
+app.use('/auth', authRouter);
 
 app.get('/health', (req, res) => {
     res.json({ status: "OwASP API Security Lab fut!" });

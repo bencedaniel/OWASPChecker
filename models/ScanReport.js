@@ -24,17 +24,15 @@ const vulnerabilitySchema = new mongoose.Schema({
     },
     confidence: {
         type: String,
-        enum: ['safe', 'warning', 'danger'],
+        enum: ['warning', 'danger'],
         required: true,
         default: 'warning' 
     },
     description: {
         type: String
-        // Részletes leírás, hogy miért jelezte a szkenner (pl. "A végpont 200 OK-t adott 403 helyett egy mezei tokenre")
     },
     payloadUsed: {
         type: String
-        // Opcionális: A payload, ami kiváltotta a hibát (pl. egy injektált JSON body vagy a hamisított targetUrl az SSRF-hez)
     }
 }, { _id: false }); // Felesleges külön _id-t generálni a beágyazott elemeknek
 
@@ -43,7 +41,6 @@ const scanReportSchema = new mongoose.Schema({
     targetUrl: {
         type: String,
         required: true,
-        // Pl. a tesztlabor címe: 'http://localhost:3000'
     },
     openApiSpecUrl: {
         type: String,

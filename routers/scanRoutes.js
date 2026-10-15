@@ -23,6 +23,24 @@ router.use(authenticateToken);
  *             type: object
  *             required: [targetUrl]
  *             properties:
+ *              testUserCredentials:
+ *                 type: object
+ *                 properties:
+ *                   username:
+ *                     type: string
+ *                     example: testuser
+ *                   password:
+ *                     type: string
+ *                     example: testpassword
+ *              testAdminCredentials:
+ *                 type: object
+ *                 properties:
+ *                   username:
+ *                     type: string
+ *                     example: adminuser
+ *                   password:
+ *                     type: string
+ *                     example: adminpassword
  *               targetUrl:
  *                 type: string
  *                 example: http://localhost:3000

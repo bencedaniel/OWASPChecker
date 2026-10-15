@@ -51,6 +51,14 @@ const scanReportSchema = new mongoose.Schema({
         enum: ['pending', 'running', 'completed', 'failed'],
         default: 'pending'
     },
+    testUserCredentials: {
+        username: { type: String, default: null },
+        password: { type: String, default: null }
+    },
+    testAdminCredentials: {
+        password: { type: String, default: null },
+        username: { type: String, default: null }
+    },
     initiatedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',

@@ -13,7 +13,7 @@ function isHttpUrl(value) {
 // POST /api/scans – új vizsgálat indítása
 export const startScan = async (req, res) => {
     try {
-        const { targetUrl, openApiSpecUrl } = req.body;
+        const { targetUrl, openApiSpecUrl, testUserCredentials, testAdminCredentials } = req.body;
 
         if (!isHttpUrl(targetUrl)) {
             return res.status(400).json({ message: 'Érvényes targetUrl megadása kötelező (http/https).' });
@@ -24,11 +24,19 @@ export const startScan = async (req, res) => {
         if (!isHttpUrl(specUrl)) {
             return res.status(400).json({ message: 'Érvénytelen openApiSpecUrl.' });
         }
+        if (!testUserCredentials || !testUserCredentials.username || !testUserCredentials.password) {
+            return res.status(400).json({ message: 'A testUserCredentials (username és password) megadása kötelező.' });
+        }
+        if (!testAdminCredentials || !testAdminCredentials.username || !testAdminCredentials.password) {
+            return res.status(400).json({ message: 'A testAdminCredentials (username és password) megadása kötelező.' });
+        }
 
         const report = await ScanReport.create({
             targetUrl,
             openApiSpecUrl: specUrl,
-            initiatedBy: req.user.id
+            initiatedBy: req.user.id,
+            testUserCredentials: testUserCredentials.username || { username: null, password: null },
+            testAdminCredentials: testAdminCredentials.username || { username: null, password: null },
         });
 
         // Nem várjuk meg: a vizsgálat a háttérben fut, a kliens a riport ID-jával lekérdezheti az állapotot

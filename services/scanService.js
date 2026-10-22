@@ -1,14 +1,20 @@
 import ScanReport from '../models/ScanReport.js';
 import { getAuthToken, harvestResourceIds } from './reconEngine.js';
-import { checkApi1Bola } from './owaspChecks/api1_bola.js';
+import { checkApi1Bola } from './owaspChecks/Api1_bola.js';
 import { brokenAuthCheck } from './owaspChecks/brokenAuth.js'; // Vagy ahogy elneveztétek
+import { checkApi3Bopla } from './owaspChecks/api3_bopla.js';
+import { checkApi4RateLimit } from './owaspChecks/Api4_rateLimiting.js';
+import { checkApi5Bfla } from './owaspChecks/Api5_bfla.js';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'];
 
 
 const checks = [
     checkApi1Bola,
-    brokenAuthCheck
+    brokenAuthCheck,
+    checkApi3Bopla,
+    checkApi4RateLimit,
+    checkApi5Bfla
 ];
 
 async function loadSpec(specUrl) {

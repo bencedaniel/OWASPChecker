@@ -1,7 +1,15 @@
 import ScanReport from '../models/ScanReport.js';
 import { getAuthToken, harvestResourceIds } from './reconEngine.js';
+import { checkApi1Bola } from './owaspChecks/api1_bola.js';
+import { brokenAuthCheck } from './owaspChecks/brokenAuth.js'; // Vagy ahogy elneveztétek
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'];
+
+
+const checks = [
+    checkApi1Bola,
+    brokenAuthCheck
+];
 
 async function loadSpec(specUrl) {
     const response = await fetch(specUrl);

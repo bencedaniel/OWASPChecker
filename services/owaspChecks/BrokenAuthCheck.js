@@ -55,8 +55,17 @@ export async function brokenAuthCheck(endpoint, context) {
         const response = await fetch(fullUrl, requestOptions);
 
         // --- 6. KIÉRTÉKELÉS ÉS RIPORTÁLÁS ---
+        let responseBody = "";
+        try { responseBody = await response.text(); } catch (e) {}
+
         if (response.status >= 200 && response.status < 300) {
-            // Hitelesítést várt, mégis kiszolgált token nélkül → sebezhető
+            const bodyLower = responseBody.toLowerCase();
+            // Ha a 200-as státusz ellenére a tartalom hibaüzenetet takar, akkor a hitelesítés valójában működik!
+            if (bodyLower.includes('error') || bodyLower.includes('unauthorized') || bodyLower.includes('denied') || bodyLower.includes('unauthenticated')) {
+                // Ez nem sebezhetőség, átugorjuk
+                return findings;
+            }
+
             findings.push({
                 owaspCategory: 'API2:2023',
                 endpoint: path,
@@ -67,7 +76,6 @@ export async function brokenAuthCheck(endpoint, context) {
                 payloadUsed: `${method} ${resolvedPath} (Authorization fejléc nélkül)`
             });
         } else if (response.status !== 401 && response.status !== 403) {
-            // Nem 2xx, de nem is a várt 401/403 → gyanús, de csak figyelmeztetés
             findings.push({
                 owaspCategory: 'API2:2023',
                 endpoint: path,
@@ -106,7 +114,19 @@ function endpointRequiresAuth(operation, spec) {
  * azt használja, különben egy semleges minta értéket.
  */
 function resolvePathParams(path, harvestedIds = {}) {
-    return path.replace(/\{([^}]+)\}/g, (_, name) => {
-        return harvestedIds?.[name] ?? '1';
-    });
+    const pathParts = path.split('/').filter(Boolean);
+    const paramIndex = pathParts.findIndex(part => part.includes('{'));
+    let resourceCategory = '';
+    
+    for (let i = paramIndex - 1; i >= 0; i--) {
+        if (harvestedIds[pathParts[i]] && harvestedIds[pathParts[i]].length > 0) {
+            resourceCategory = pathParts[i];
+            break;
+        }
+    }
+
+    const validIds = harvestedIds[resourceCategory] || [];
+    const targetId = validIds.length > 0 ? validIds[0] : '1';
+
+    return path.replace(/{([^}]+)}/, targetId);
 }

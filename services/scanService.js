@@ -5,6 +5,9 @@ import { brokenAuthCheck } from './owaspChecks/brokenAuth.js'; // Vagy ahogy eln
 import { checkApi3Bopla } from './owaspChecks/api3_bopla.js';
 import { checkApi4RateLimit } from './owaspChecks/Api4_rateLimiting.js';
 import { checkApi5Bfla } from './owaspChecks/Api5_bfla.js';
+import { checkApi6BusinessFlows } from './owaspChecks/api6_business_flows.js';
+import { checkApi7Ssrf } from './owaspChecks/api7_ssrf.js';
+import { checkApi8SecurityMisconfiguration } from './owaspChecks/api8_SM.js';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'];
 
@@ -14,7 +17,11 @@ const checks = [
     brokenAuthCheck,
     checkApi3Bopla,
     checkApi4RateLimit,
-    checkApi5Bfla
+    checkApi5Bfla,
+    checkApi6BusinessFlows,
+    checkApi7Ssrf,
+    checkApi8SecurityMisconfiguration
+    
 ];
 
 async function loadSpec(specUrl) {

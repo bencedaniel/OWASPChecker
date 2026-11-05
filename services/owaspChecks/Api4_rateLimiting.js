@@ -1,5 +1,4 @@
-import { smartFetch } from '../apiClient.js';
-
+import { smartFetch } from '../smartFetch.js';
 /**
  * OWASP API4:2023 – Unrestricted Resource Consumption (Rate Limiting hiánya) teszt
  * 

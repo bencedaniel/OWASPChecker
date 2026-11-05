@@ -1,5 +1,4 @@
-import { smartFetch } from '../apiClient.js'; // Az elérés projekt-specifikus lehet
-
+import { smartFetch } from '../smartFetch.js';
 /**
  * OWASP API5:2023 – Broken Function Level Authorization (BFLA) teszt
  * 

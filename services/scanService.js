@@ -8,6 +8,8 @@ import { checkApi5Bfla } from './owaspChecks/Api5_bfla.js';
 import { checkApi6BusinessFlows } from './owaspChecks/api6_business_flows.js';
 import { checkApi7Ssrf } from './owaspChecks/api7_ssrf.js';
 import { checkApi8SecurityMisconfiguration } from './owaspChecks/api8_SM.js';
+import { checkApi9ImproperInventory } from './owaspChecks/api9_old.js';
+import { checkApi10UnsafeConsumption } from './owaspChecks/Api10_uc.js';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'];
 
@@ -20,7 +22,9 @@ const checks = [
     checkApi5Bfla,
     checkApi6BusinessFlows,
     checkApi7Ssrf,
-    checkApi8SecurityMisconfiguration
+    checkApi8SecurityMisconfiguration,
+    checkApi9ImproperInventory,
+    checkApi10UnsafeConsumption
     
 ];
 

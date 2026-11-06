@@ -2,42 +2,70 @@
  * Végignézi az OpenAPI specifikációt, és megkeresi a bejelentkezési végpontot,
  * VALAMINT kinyeri, hogy a végpont milyen mezőneveket vár a felhasználónévhez és jelszóhoz.
  */
+function resolveSchema(schema, spec, seen = new Set()) {
+    if (!schema || typeof schema !== 'object') return null;
+    if (!schema.$ref) return schema;
+
+    const match = schema.$ref.match(/^#\/components\/schemas\/([^/]+)$/);
+    if (!match || seen.has(match[1])) return null;
+    seen.add(match[1]);
+    return resolveSchema(spec?.components?.schemas?.[match[1]], spec, seen);
+}
+
+function getRequestSchema(operation, spec) {
+    const content = operation?.requestBody?.content;
+    if (!content || typeof content !== 'object') return null;
+    const mediaType = Object.keys(content).find(type =>
+        type.toLowerCase() === 'application/json' || type.toLowerCase().endsWith('+json')
+    );
+    return resolveSchema(mediaType ? content[mediaType]?.schema : null, spec);
+}
+
+function isRegistrationPath(path) {
+    return /(^|[/_-])(register|registration|signup|sign-up|create-account)([/_-]|$)/i.test(path);
+}
+
+function isLoginPath(path) {
+    return /(^|[/_-])(login|signin|sign-in|authenticate|auth|token)([/_-]|$)/i.test(path);
+}
+
 function findLoginEndpointInfo(spec) {
     if (!spec || !spec.paths) return null;
+
+    const candidates = [];
 
     for (const [path, methods] of Object.entries(spec.paths)) {
         if (methods.post) {
             const pathLower = path.toLowerCase();
             const operation = methods.post;
 
-            let isLoginEndpoint = false;
+            const isRegistrationEndpoint = isRegistrationPath(path);
+            const isExplicitLoginPath = isLoginPath(path);
+            let isLoginEndpoint = isExplicitLoginPath;
             // Alapértelmezett feltételezések, ha nem találnánk mást
             let expectedUserKey = 'username'; 
             let expectedPassKey = 'password';
 
             // 1. Megnézzük az útvonal nevét
-            if (pathLower.includes('/login') || pathLower.includes('/signin') || pathLower.includes('/auth')) {
-                isLoginEndpoint = true;
-            }
-
             // 2. Kielemezzük a Swagger által megadott paramétereket (Schema)
             try {
-                const schema = operation.requestBody?.content['application/json']?.schema;
+                const schema = getRequestSchema(operation, spec);
                 if (schema && schema.properties) {
                     const props = Object.keys(schema.properties);
                     
                     // Kikeressük a jelszó mező pontos nevét (lehet 'password', 'pass', 'pin', stb.)
                     const foundPassKey = props.find(k => k.toLowerCase().includes('pass') || k.toLowerCase().includes('pin'));
-                    if (foundPassKey) {
+                    if (foundPassKey && !isRegistrationEndpoint) {
                         expectedPassKey = foundPassKey;
-                        isLoginEndpoint = true; // Ha van jelszó mező, az nagyon erős bizonyíték, hogy ez egy login
+                        isLoginEndpoint = !isRegistrationEndpoint;
                     }
 
                     // Kikeressük a felhasználónév mező pontos nevét (lehet 'email', 'username', 'login', 'identifier')
-                    const foundUserKey = props.find(k => 
+                    const foundUserKey = props.find(k =>
                         k.toLowerCase().includes('email') || 
                         k.toLowerCase().includes('user') || 
-                        k.toLowerCase().includes('login')
+                        k.toLowerCase().includes('login') ||
+                        k.toLowerCase().includes('identifier')
                     );
                     if (foundUserKey) {
                         expectedUserKey = foundUserKey;
@@ -48,17 +76,33 @@ function findLoginEndpointInfo(spec) {
             }
 
             // Ha beazonosítottuk, hogy ez a login végpont, visszaadjuk a pontos paraméternevekkel együtt
-            if (isLoginEndpoint) {
-                return { 
+            if (isLoginEndpoint && !isRegistrationEndpoint) {
+                candidates.push({
                     path, 
                     usernameKey: expectedUserKey, 
                     passwordKey: expectedPassKey 
-                };
+                });
             }
         }
     }
 
-    return null;
+    return candidates.find(candidate => isLoginPath(candidate.path)) || candidates[0] || null;
+}
+
+export function normalizeCredentials(credentials) {
+    if (!credentials || typeof credentials !== 'object') return null;
+
+    const identifier = credentials.username ??
+        credentials.email ??
+        credentials.login ??
+        credentials.identifier ??
+        credentials.user;
+
+    if (identifier == null || credentials.password == null) return null;
+    return {
+        username: String(identifier),
+        password: String(credentials.password)
+    };
 }
 
 /**
@@ -66,7 +110,8 @@ function findLoginEndpointInfo(spec) {
  * alapján dinamikusan építi fel.
  */
 export async function getAuthToken(targetUrl, credentials, openApiSpec) {
-    if (!credentials || !credentials.username || !credentials.password) {
+    const normalizedCredentials = normalizeCredentials(credentials);
+    if (!normalizedCredentials) {
         console.warn("[Auth] Hiányzó hitelesítő adatok, bejelentkezés kihagyva.");
         return null;
     }
@@ -83,8 +128,8 @@ export async function getAuthToken(targetUrl, credentials, openApiSpec) {
     
     // DINAMIKUS PAYLOAD ÉPÍTÉS: Összerendeljük a mi adatainkat az API által várt kulcsokkal
     const requestBody = {};
-    requestBody[loginInfo.usernameKey] = credentials.username;
-    requestBody[loginInfo.passwordKey] = credentials.password;
+    requestBody[loginInfo.usernameKey] = normalizedCredentials.username;
+    requestBody[loginInfo.passwordKey] = normalizedCredentials.password;
 
     console.log(`[Auth] Belépés: ${loginInfo.path} | Használt séma: { "${loginInfo.usernameKey}": "...", "${loginInfo.passwordKey}": "..." }`);
 
@@ -96,16 +141,27 @@ export async function getAuthToken(targetUrl, credentials, openApiSpec) {
         });
 
         if (!response.ok) {
-            console.error(`[Auth] Sikertelen bejelentkezés (${response.status}) a '${credentials.username}' fiókkal.`);
+            console.error(`[Auth] Sikertelen bejelentkezés (${response.status}) a '${normalizedCredentials.username}' fiókkal.`);
             return null;
         }
 
         const data = await response.json();
         
         // A token kulcsa általában 'token' vagy 'accessToken'
-        return data.token || data.accessToken || data.access_token || null; 
+        return findToken(data);
     } catch (error) {
         console.error(`[Auth] Hálózati hiba a bejelentkezéskor:`, error.message);
+        return null;
+    }
+
+    function findToken(value, key = '') {
+        if (typeof value === 'string' && key.toLowerCase().includes('token')) return value;
+        if (!value || typeof value !== 'object') return null;
+
+        for (const [childKey, childValue] of Object.entries(value)) {
+            const token = findToken(childValue, childKey);
+            if (token) return token;
+        }
         return null;
     }
 }
@@ -115,7 +171,8 @@ export async function getAuthToken(targetUrl, credentials, openApiSpec) {
  * és kinyeri a létező azonosítókat a későbbi sebezhetőség vizsgálatokhoz.
  */
 export async function harvestResourceIds(targetUrl, openApiSpec, adminToken) {
-    const harvestedData = {}; 
+    const categories = {};
+    const sources = {};
 
     const fetchOptions = {
         method: 'GET',
@@ -125,34 +182,52 @@ export async function harvestResourceIds(targetUrl, openApiSpec, adminToken) {
         }
     };
 
+    // REKURZÍV ID KERESŐ: szabványos és egyedi string/numerikus azonosítókat is kezel.
+    const extractIds = (obj, key = '') => {
+        let ids = [];
+
+        const isIdKey = key === '_id' ||
+            /(?:^|[_-])(id|uuid|identifier)$/i.test(key) ||
+            /(?:Id|ID|UUID|Identifier)$/.test(key);
+        if (isIdKey && (typeof obj === 'string' || typeof obj === 'number') && String(obj).trim()) {
+            ids.push(String(obj));
+        } else if (Array.isArray(obj)) {
+            for (const item of obj) {
+                ids = ids.concat(extractIds(item, key));
+            }
+        } else if (typeof obj === 'object' && obj !== null) {
+            for (const [key, value] of Object.entries(obj)) {
+                ids = ids.concat(extractIds(value, key));
+            }
+        }
+        return ids;
+    };
+
     for (const [path, methods] of Object.entries(openApiSpec.paths || {})) {
+        // Csak a paraméter nélküli GET végpontokat hívjuk meg (ezek a listázók)
         if (methods.get && !path.includes('{')) {
             const fullUrl = `${targetUrl}${path}`;
-            const pathParts = path.split('/').filter(Boolean);
-            const resourceName = pathParts[pathParts.length - 1];
             
-            if (!harvestedData[resourceName]) {
-                harvestedData[resourceName] = [];
+            // Intelligens kategória név kinyerése az útvonalból (pl. "/api/devices" -> "devices")
+            const pathSegments = path.split('/').filter(Boolean);
+            const resourceName = pathSegments.length > 1 ? pathSegments[pathSegments.length - 1] : pathSegments[0];
+
+            if (!categories[resourceName]) {
+                categories[resourceName] = [];
             }
 
             try {
                 const response = await fetch(fullUrl, fetchOptions);
                 if (response.ok) {
                     const data = await response.json();
+                    const foundIds = extractIds(data);
                     
-                    if (Array.isArray(data)) {
-                        data.forEach(item => {
-                            if (item._id) harvestedData[resourceName].push(item._id);
-                            if (item.id) harvestedData[resourceName].push(item.id);
-                        });
-                    } else if (typeof data === 'object' && data !== null) {
-                        Object.values(data).forEach(val => {
-                            if (Array.isArray(val)) {
-                                val.forEach(item => {
-                                    if (item._id) harvestedData[resourceName].push(item._id);
-                                });
-                            }
-                        });
+                    if (foundIds.length > 0) {
+                        categories[resourceName].push(...foundIds);
+                        sources[path] = {
+                            category: resourceName,
+                            ids: foundIds
+                        };
                     }
                 }
             } catch (error) {
@@ -161,11 +236,15 @@ export async function harvestResourceIds(targetUrl, openApiSpec, adminToken) {
         }
     }
 
-    for (const key in harvestedData) {
-        harvestedData[key] = [...new Set(harvestedData[key])];
+    // Duplikátumok kiszűrése kategóriánként, és logolás
+    for (const key in categories) {
+        categories[key] = [...new Set(categories[key])];
+        if (categories[key].length > 0) {
+            console.log(`[Recon] Kategória: '${key}' -> ${categories[key].length} db ID begyűjtve.`);
+        }
     }
 
-    return harvestedData;
+    return { categories, sources };
 }
 
 

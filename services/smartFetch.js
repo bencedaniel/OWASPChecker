@@ -23,7 +23,7 @@ export async function smartFetch(url, options, context, role = 'tester') {
     let response = await fetch(url, { ...options, headers });
 
     // 3. Ha 401 Unauthorized hibát kapunk, a token valószínűleg lejárt (vagy eleve rossz volt)
-    if (response.status === 401) {
+    if (response.status === 401 && !isAuthenticationEndpoint(url, context.spec)) {
         console.log(`[SmartFetch] 401-es hiba a ${url} végponton. Újrahitelesítés folyamatban (${role} szerepkör)...`);
         
         // Hitelesítő adatok kiválasztása a szerepkör alapján
@@ -48,4 +48,26 @@ export async function smartFetch(url, options, context, role = 'tester') {
     }
 
     return response;
+}
+
+function isAuthenticationEndpoint(url, spec) {
+    let pathname;
+    try {
+        pathname = new URL(url).pathname.toLowerCase();
+    } catch {
+        return false;
+    }
+
+    return Object.keys(spec?.paths ?? {}).some(path => {
+        const normalizedPath = path.toLowerCase();
+        const isAuthPath =
+            normalizedPath.includes('login') ||
+            normalizedPath.includes('signin') ||
+            normalizedPath.includes('sign-in') ||
+            normalizedPath.includes('register') ||
+            normalizedPath.includes('signup') ||
+            normalizedPath.includes('sign-up');
+
+        return isAuthPath && pathname === normalizedPath;
+    });
 }

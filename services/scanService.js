@@ -1,7 +1,7 @@
 import ScanReport from '../models/ScanReport.js';
 import { getAuthToken, harvestResourceIds } from './reconEngine.js';
 import { checkApi1Bola } from './owaspChecks/api1_bola.js';
-import { brokenAuthCheck } from './owaspChecks/brokenAuth.js'; // Vagy ahogy elneveztétek
+import { brokenAuthCheck } from './owaspChecks/api2_brokenAuth.js';
 import { checkApi3Bopla } from './owaspChecks/api3_bopla.js';
 import { checkApi4RateLimit } from './owaspChecks/api4_rateLimiting.js';
 import { checkApi5Bfla } from './owaspChecks/api5_bfla.js';

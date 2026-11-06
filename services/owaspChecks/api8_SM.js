@@ -1,4 +1,5 @@
-import { smartFetch } from '../apiClient.js';
+import { smartFetch } from '../smartFetch.js';
+import { resolvePathParams } from '../pathResolver.js';
 
 /**
  * OWASP API8:2023 – Security Misconfiguration (Biztonsági hibás konfigurációk)
@@ -30,19 +31,19 @@ export async function checkApi8SecurityMisconfiguration(endpoint, context) {
     const { path, method, operation } = endpoint;
     const { targetUrl, harvestedIds } = context;
 
+    if (method.toUpperCase() === 'DELETE' && /(^|\/)me(\/|$)/i.test(path)) {
+        return findings;
+    }
+
     // --- 3. RELEVANCIA VIZSGÁLAT ---
     // A Security Misconfiguration minden végponton vizsgálható, de leginkább GET 
     // kéréseknél vagy általános OPTIONS/szándékos hibakezelési teszteknél mutatja meg magát.
     // Nem szűrjük ki a path-t, mert a globális fejeceket és hibakezelést mindenhol vizsgálni kell.
 
     // --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
-    const resolvedPath = path.replace(/\{([^}]+)\}/g, (_, paramName) => {
-        const pathParts = path.split('/').filter(Boolean);
-        const paramIndex = pathParts.findIndex(part => part.includes('{'));
-        let resourceCategory = paramIndex > 0 ? pathParts[paramIndex - 1] : '';
-        const validIds = harvestedIds[resourceCategory] || [];
-        return validIds.length > 0 ? validIds[0] : '1';
-    });
+// --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
+    const resolvedPath = resolvePathParams(path, harvestedIds);
+    if (!resolvedPath) return findings;
 
     const fullUrl = `${targetUrl.replace(/\/$/, '')}${resolvedPath}`;
 
@@ -96,11 +97,14 @@ export async function checkApi8SecurityMisconfiguration(endpoint, context) {
 
         // 3. Teszt: Stack trace vagy részletes hibaüzenet szivárgás szándékos rossz kéréssel
         // Küldünk egy direkt rossz formátumú/szándékosan hibás kérést, hogy lássuk, mit felel a szerver hiba esetén
-        const badResponse = await smartFetch(fullUrl, {
-            method: method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ invalid_malformed_test_key_xyz: "trigger_error" })
-        }, context, 'tester');
+        const badRequest = {
+            method,
+            headers: { 'Content-Type': 'application/json' }
+        };
+        if (!['GET', 'HEAD'].includes(method.toUpperCase())) {
+            badRequest.body = JSON.stringify({ invalid_malformed_test_key_xyz: "trigger_error" });
+        }
+        const badResponse = await smartFetch(fullUrl, badRequest, context, 'tester');
 
         let badResponseBody = "";
         try { badResponseBody = await badResponse.text(); } catch (e) {}

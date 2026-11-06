@@ -38,6 +38,7 @@ export async function brokenAuthCheck(endpoint, context) {
 
     // --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
     const resolvedPath = resolvePathParams(path, harvestedIds);
+    if (!resolvedPath) return findings;
     const fullUrl = `${targetUrl.replace(/\/$/, '')}${resolvedPath}`;
 
     // --- 5. TÁMADÁS VÉGREHAJTÁSA: kérés token NÉLKÜL, natív fetch-csel ---
@@ -109,24 +110,4 @@ function endpointRequiresAuth(operation, spec) {
     return Array.isArray(spec?.security) && spec.security.length > 0;
 }
 
-/**
- * Az útvonal {param} helyőrzőit kicseréli: ha a Recon talált hozzá valid ID-t,
- * azt használja, különben egy semleges minta értéket.
- */
-function resolvePathParams(path, harvestedIds = {}) {
-    const pathParts = path.split('/').filter(Boolean);
-    const paramIndex = pathParts.findIndex(part => part.includes('{'));
-    let resourceCategory = '';
-    
-    for (let i = paramIndex - 1; i >= 0; i--) {
-        if (harvestedIds[pathParts[i]] && harvestedIds[pathParts[i]].length > 0) {
-            resourceCategory = pathParts[i];
-            break;
-        }
-    }
-
-    const validIds = harvestedIds[resourceCategory] || [];
-    const targetId = validIds.length > 0 ? validIds[0] : '1';
-
-    return path.replace(/{([^}]+)}/, targetId);
-}
+import { resolvePathParams } from '../pathResolver.js';

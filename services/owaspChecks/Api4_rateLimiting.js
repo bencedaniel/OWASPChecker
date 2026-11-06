@@ -1,4 +1,5 @@
 import { smartFetch } from '../smartFetch.js';
+import { resolvePathParams } from '../pathResolver.js';
 /**
  * OWASP API4:2023 – Unrestricted Resource Consumption (Rate Limiting hiánya) teszt
  * 
@@ -28,24 +29,31 @@ export async function checkApi4RateLimit(endpoint, context) {
     const { path, method } = endpoint;
     const { targetUrl, harvestedIds } = context;
 
+    if (method.toUpperCase() === 'DELETE' && /(^|\/)me(\/|$)/i.test(path)) {
+        return findings;
+    }
+
     // --- 3. RELEVANCIA VIZSGÁLAT ---
     // A Rate Limiting tesztelés mindegyik metódusra (főleg GET és POST) releváns,
     // de célszerű a publikus vagy hitelesítést igénylő főbb végpontokon futtatni.
     // Nem releváns, ha a végpont eleve dokumentáltan belső vagy teszt jellegű.
     const lowerPath = path.toLowerCase();
-    if (lowerPath.includes('health') || lowerPath.includes('ping')) {
+    if (
+        lowerPath.includes('health') ||
+        lowerPath.includes('ping') ||
+        lowerPath.includes('login') ||
+        lowerPath.includes('signin') ||
+        lowerPath.includes('sign-in') ||
+        lowerPath.includes('register') ||
+        lowerPath.includes('signup') ||
+        lowerPath.includes('sign-up')
+    ) {
         return findings; // Az egészségellenőrző végpontokat felesleges terhelni
     }
 
-    // --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
-    const resolvedPath = path.replace(/\{([^}]+)\}/g, (_, paramName) => {
-        const pathParts = path.split('/').filter(Boolean);
-        const paramIndex = pathParts.findIndex(part => part.includes('{'));
-        let resourceCategory = paramIndex > 0 ? pathParts[paramIndex - 1] : '';
-        const validIds = harvestedIds[resourceCategory] || [];
-        return validIds.length > 0 ? validIds[0] : '1';
-    });
-
+// --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
+    const resolvedPath = resolvePathParams(path, harvestedIds);
+    if (!resolvedPath) return findings;
     const fullUrl = `${targetUrl.replace(/\/$/, '')}${resolvedPath}`;
 
     // --- 5. TÁMADÁS VÉGREHAJTÁSA (smartFetch) ---

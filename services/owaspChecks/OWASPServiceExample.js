@@ -1,4 +1,4 @@
-import { smartFetch } from '../apiClient.js'; // Az elérés projekt-specifikus lehet
+import { smartFetch } from '../smartFetch.js';
 
 /**
  * OWASP Sebezhetőség Kereső Modul Üres Sablon

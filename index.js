@@ -52,6 +52,8 @@ app.get('/api-docs.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.send(swaggerSpec);
 });
+app.use('/auth', authRouter);
+app.use('/api/scans', scanRoutes);
 
 // Routerek (végpontok) bekötése
 

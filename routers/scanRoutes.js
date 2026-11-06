@@ -23,30 +23,32 @@ router.use(authenticateToken);
  *             type: object
  *             required: [targetUrl]
  *             properties:
- *              testUserCredentials:
+ *               testUserCredentials:
  *                 type: object
  *                 properties:
- *                   username:
+ *                   identifier:
  *                     type: string
- *                     example: testuser
+ *                     description: username, email, login vagy más bejelentkezési azonosító
+ *                     example: user@example.test
  *                   password:
  *                     type: string
  *                     example: testpassword
- *              testAdminCredentials:
+ *               testAdminCredentials:
  *                 type: object
  *                 properties:
- *                   username:
+ *                   identifier:
  *                     type: string
- *                     example: adminuser
+ *                     description: username, email, login vagy más bejelentkezési azonosító
+ *                     example: admin@example.test
  *                   password:
  *                     type: string
  *                     example: adminpassword
  *               targetUrl:
  *                 type: string
- *                 example: http://localhost:3000
+ *                 example: https://target.example
  *               openApiSpecUrl:
  *                 type: string
- *                 example: http://localhost:3000/api-docs.json
+ *                 example: https://target.example/api-docs.json
  *     responses:
  *       202:
  *         description: A vizsgálat elindult.

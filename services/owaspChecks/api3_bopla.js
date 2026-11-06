@@ -1,4 +1,5 @@
 import { smartFetch } from '../smartFetch.js';
+import { resolvePathParams } from '../pathResolver.js';
 export const SENSITIVE_KEYS_MULTILINGUAL = {
     // 1. Hitelesítési és titkosítási adatok
     credentials: {
@@ -59,9 +60,11 @@ export const SENSITIVE_KEYS_MULTILINGUAL = {
 function generateDynamicMaliciousPayload(operation) {
     const schema = operation?.requestBody?.content?.['application/json']?.schema;
     const payload = {};
+    const identityFields = new Set(['username', 'email', 'password', 'passwordconfirmation']);
 
     if (schema && schema.properties) {
         for (const [key, prop] of Object.entries(schema.properties)) {
+            if (identityFields.has(key.toLowerCase())) continue;
             if (prop.type === 'string') payload[key] = "test_value";
             else if (prop.type === 'number' || prop.type === 'integer') payload[key] = 1;
             else if (prop.type === 'boolean') payload[key] = false;
@@ -94,18 +97,19 @@ export async function checkApi3Bopla(endpoint, context) {
     const { path, method, operation } = endpoint;
     const { targetUrl, harvestedIds } = context;
 
-    // Közös útvonal (path) paraméter feloldó segédfüggvény
-    const resolvePath = (p) => {
-        return p.replace(/\{([^}]+)\}/g, (_, paramName) => {
-            const pathParts = p.split('/').filter(Boolean);
-            const paramIndex = pathParts.findIndex(part => part.includes('{'));
-            let resourceCategory = paramIndex > 0 ? pathParts[paramIndex - 1] : '';
-            const validIds = harvestedIds[resourceCategory] || [];
-            return validIds.length > 0 ? validIds[0] : '1';
-        });
-    };
+    if (method.toUpperCase() === 'DELETE') {
+        return findings;
+    }
 
-    const resolvedPath = resolvePath(path);
+    if (
+        ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase()) &&
+        /(^|\/)me(\/|$)/i.test(path)
+    ) {
+        return findings;
+    }
+
+    const resolvedPath = resolvePathParams(path, harvestedIds);
+    if (!resolvedPath) return findings;
     const fullUrl = `${targetUrl}${resolvedPath}`;
 
     try {

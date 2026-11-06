@@ -1,5 +1,6 @@
 import ScanReport from '../models/ScanReport.js';
 import { runScan } from '../services/scanService.js';
+import { normalizeCredentials } from '../services/reconEngine.js';
 
 function isHttpUrl(value) {
     try {
@@ -24,19 +25,21 @@ export const startScan = async (req, res) => {
         if (!isHttpUrl(specUrl)) {
             return res.status(400).json({ message: 'Érvénytelen openApiSpecUrl.' });
         }
-        if (!testUserCredentials || !testUserCredentials.username || !testUserCredentials.password) {
-            return res.status(400).json({ message: 'A testUserCredentials (username és password) megadása kötelező.' });
+        const normalizedUserCredentials = normalizeCredentials(testUserCredentials);
+        if (!normalizedUserCredentials) {
+            return res.status(400).json({ message: 'A testUserCredentials azonosítója (username, email vagy login) és password mezője kötelező.' });
         }
-        if (!testAdminCredentials || !testAdminCredentials.username || !testAdminCredentials.password) {
-            return res.status(400).json({ message: 'A testAdminCredentials (username és password) megadása kötelező.' });
+        const normalizedAdminCredentials = normalizeCredentials(testAdminCredentials);
+        if (!normalizedAdminCredentials) {
+            return res.status(400).json({ message: 'A testAdminCredentials azonosítója (username, email vagy login) és password mezője kötelező.' });
         }
 
         const report = await ScanReport.create({
             targetUrl,
             openApiSpecUrl: specUrl,
             initiatedBy: req.user.id,
-            testUserCredentials: testUserCredentials.username || { username: null, password: null },
-            testAdminCredentials: testAdminCredentials.username || { username: null, password: null },
+            testUserCredentials: normalizedUserCredentials,
+            testAdminCredentials: normalizedAdminCredentials,
         });
 
         // Nem várjuk meg: a vizsgálat a háttérben fut, a kliens a riport ID-jával lekérdezheti az állapotot

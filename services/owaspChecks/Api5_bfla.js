@@ -1,4 +1,48 @@
 import { smartFetch } from '../smartFetch.js';
+
+function getCategories(harvestedIds) {
+    return harvestedIds?.categories || harvestedIds || {};
+}
+
+function findIdsForSegment(segment, categories) {
+    const categoryKey = Object.keys(categories).find(
+        key => key.toLowerCase() === segment.toLowerCase()
+    );
+    return categoryKey && Array.isArray(categories[categoryKey])
+        ? categories[categoryKey]
+        : [];
+}
+
+function getCandidatePaths(path, harvestedIds) {
+    const pathParts = path.split('/').filter(Boolean);
+    const parameterIndexes = pathParts
+        .map((part, index) => part.match(/^\{([^}]+)\}$/) ? index : -1)
+        .filter(index => index !== -1);
+
+    if (parameterIndexes.length === 0) return [path];
+
+    const categories = getCategories(harvestedIds);
+    const idsByParameter = parameterIndexes.map(parameterIndex => {
+        for (let resourceIndex = parameterIndex - 1; resourceIndex >= 0; resourceIndex--) {
+            const ids = findIdsForSegment(pathParts[resourceIndex], categories);
+            if (ids.length > 0) return ids;
+        }
+        return [];
+    });
+
+    if (idsByParameter.some(ids => ids.length === 0)) return [];
+
+    return idsByParameter.reduce(
+        (paths, ids, parameterIndex) => paths.flatMap(currentPaths =>
+            ids.map(id => currentPaths.map(pathPartsForCurrentPath => {
+                const parts = pathPartsForCurrentPath.split('/').filter(Boolean);
+                parts[parameterIndexes[parameterIndex]] = String(id);
+                return `/${parts.join('/')}`;
+            }))
+        ),
+        [[path]]
+    ).flat().slice(0, 50);
+}
 /**
  * OWASP API5:2023 – Broken Function Level Authorization (BFLA) teszt
  * 
@@ -54,15 +98,9 @@ export async function checkApi5Bfla(endpoint, context) {
 
     // --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
     // Az útvonal paraméterek helyettesítése alapértelmezett '1'-el vagy Recon azonosítóval
-    const resolvedPath = path.replace(/\{([^}]+)\}/g, (_, paramName) => {
-        const pathParts = path.split('/').filter(Boolean);
-        const paramIndex = pathParts.findIndex(part => part.includes('{'));
-        let resourceCategory = paramIndex > 0 ? pathParts[paramIndex - 1] : '';
-        const validIds = harvestedIds[resourceCategory] || [];
-        return validIds.length > 0 ? validIds[0] : '1';
-    });
-
-    const fullUrl = `${targetUrl.replace(/\/$/, '')}${resolvedPath}`;
+// --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
+    const candidatePaths = getCandidatePaths(path, harvestedIds);
+    if (candidatePaths.length === 0) return findings;
 
     // --- 5. TÁMADÁS VÉGREHAJTÁSA (smartFetch) ---
     try {
@@ -74,31 +112,40 @@ export async function checkApi5Bfla(endpoint, context) {
             requestOptions.headers['Content-Type'] = 'application/json';
         }
 
-        // Támadás végrehajtása a mezei 'tester' tokennel egy admin végponton
-        const response = await smartFetch(fullUrl, requestOptions, context, 'tester');
-        const status = response.status;
+        for (const resolvedPath of candidatePaths) {
+            const fullUrl = `${targetUrl.replace(/\/$/, '')}${resolvedPath}`;
+            const response = await smartFetch(fullUrl, requestOptions, context, 'tester');
+            const status = response.status;
 
-        // --- 6. KIÉRTÉKELÉS ÉS RIPORTÁLÁS ---
-        // Ha a mezei felhasználó 2xx sikeres választ kapott az admin végpontra -> BFLA sebezhetőség
-        if (status >= 200 && status < 300) {
-            let responseBody = "";
-            try { responseBody = await response.text(); } catch (e) {}
-
-            // Fals pozitív szűrés (ha a 200 OK státusz ellenére a válasz hibaüzenetet tartalmaz)
-            const bodyLower = responseBody.toLowerCase();
-            if (bodyLower.includes('error') || bodyLower.includes('unauthorized') || bodyLower.includes('forbidden')) {
-                return findings;
+            if (status === 404) {
+                console.log(`[API5] ${resolvedPath} nem található (404), következő begyűjtött ID próbálata.`);
+                continue;
             }
 
-            findings.push({
-                owaspCategory: 'API5:2023',
-                endpoint: path,
-                method: method,
-                severity: 'High',
-                confidence: 'danger',
-                description: `Broken Function Level Authorization (BFLA) sebezhetőség. Egy korlátozott jogosultságú ('tester') felhasználó sikeresen meghívta az adminisztratív végpontot (HTTP ${status}).`,
-                payloadUsed: `${method} ${resolvedPath} (tester tokennel)`
-            });
+            // --- 6. KIÉRTÉKELÉS ÉS RIPORTÁLÁS ---
+            // Ha a mezei felhasználó 2xx sikeres választ kapott az admin végpontra -> BFLA sebezhetőség
+            if (status >= 200 && status < 300) {
+                let responseBody = "";
+                try { responseBody = await response.text(); } catch (e) {}
+
+                // Fals pozitív szűrés (ha a 200 OK státusz ellenére a válasz hibaüzenetet tartalmaz)
+                const bodyLower = responseBody.toLowerCase();
+                if (bodyLower.includes('error') || bodyLower.includes('unauthorized') || bodyLower.includes('forbidden')) {
+                    return findings;
+                }
+
+                findings.push({
+                    owaspCategory: 'API5:2023',
+                    endpoint: path,
+                    method: method,
+                    severity: 'High',
+                    confidence: 'danger',
+                    description: `Broken Function Level Authorization (BFLA) sebezhetőség. Egy korlátozott jogosultságú ('tester') felhasználó sikeresen meghívta az adminisztratív végpontot (HTTP ${status}).`,
+                    payloadUsed: `${method} ${resolvedPath} (tester tokennel)`
+                });
+            }
+
+            return findings;
         }
 
     } catch (error) {

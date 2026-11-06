@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { brokenAuthCheck } from '../../services/owaspChecks/BrokenAuthCheck.js';
+import { brokenAuthCheck } from '../../services/owaspChecks/api2_brokenAuth.js';
 // 1. Mockoljuk a globális natív fetch-et
 global.fetch = vi.fn();
 

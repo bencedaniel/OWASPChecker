@@ -1,15 +1,49 @@
 import { smartFetch } from '../smartFetch.js';
+import { resolvePathParamCandidates } from '../pathResolver.js';
 
+function resolveSchema(schema, spec, seen = new Set()) {
+    if (!schema || typeof schema !== 'object') return null;
+    if (!schema.$ref) return schema;
 
-function generateMockPayloadFromSchema(schema) {
-    if (!schema || !schema.properties) return {};
+    const match = schema.$ref.match(/^#\/components\/schemas\/([^/]+)$/);
+    if (!match || seen.has(match[1])) return null;
+    seen.add(match[1]);
+    return resolveSchema(spec?.components?.schemas?.[match[1]], spec, seen);
+}
+
+function generateMockValue(schema, spec) {
+    const resolved = resolveSchema(schema, spec);
+    if (!resolved) return 'bola_test_string';
+    if (resolved.example !== undefined) return resolved.example;
+    if (resolved.default !== undefined) return resolved.default;
+    if (Array.isArray(resolved.enum) && resolved.enum.length > 0) return resolved.enum[0];
+    if (resolved.format === 'email') return 'bola-test@example.invalid';
+    if (resolved.type === 'string') return 'bola_test_string';
+    if (resolved.type === 'number' || resolved.type === 'integer') return 1;
+    if (resolved.type === 'boolean') return true;
+    if (resolved.type === 'array') return [];
+    if (resolved.type === 'object' || resolved.properties) {
+        return generateMockPayloadFromSchema(resolved, spec);
+    }
+    return 'test';
+}
+
+function generateMockPayloadFromSchema(schema, spec) {
+    const resolvedSchema = resolveSchema(schema, spec);
+    if (!resolvedSchema) return {};
+
+    if (resolvedSchema.allOf) {
+        return resolvedSchema.allOf.reduce(
+            (payload, part) => ({ ...payload, ...generateMockPayloadFromSchema(part, spec) }),
+            {}
+        );
+    }
+
+    if (!resolvedSchema.properties) return {};
+
     const mock = {};
-    for (const [key, prop] of Object.entries(schema.properties)) {
-        if (prop.type === 'string') mock[key] = "bola_test_string";
-        else if (prop.type === 'number' || prop.type === 'integer') mock[key] = 1;
-        else if (prop.type === 'boolean') mock[key] = true;
-        else if (prop.type === 'array') mock[key] = [];
-        else mock[key] = "test"; // Fallback
+    for (const [key, prop] of Object.entries(resolvedSchema.properties)) {
+        mock[key] = generateMockValue(prop, spec);
     }
     return mock;
 }
@@ -17,7 +51,7 @@ function generateMockPayloadFromSchema(schema) {
 export async function checkApi1Bola(endpoint, context) {
     const findings = [];
     const { path, method, operation } = endpoint;
-    const { targetUrl, harvestedIds } = context;
+    const { targetUrl } = context;
 
     // 1. RELEVANCIA VIZSGÁLAT
     const pathParamRegex = /{([^}]+)}/g;
@@ -26,68 +60,51 @@ export async function checkApi1Bola(endpoint, context) {
     
     const paramName = match[1];
 
-    // 2. ID KIKERESÉSE
-    const pathParts = path.split('/').filter(Boolean);
-    const paramIndex = pathParts.findIndex(part => part.includes('{'));
-    let resourceCategory = '';
-    
-    for (let i = paramIndex - 1; i >= 0; i--) {
-        if (harvestedIds[pathParts[i]] && harvestedIds[pathParts[i]].length > 0) {
-            resourceCategory = pathParts[i];
-            break;
-        }
-    }
-
-    const validIds = harvestedIds[resourceCategory] || [];
-    if (validIds.length === 0) return findings;
-
-    // BIZTOSÍTÉK: Kizárjuk a tesztelő saját ismert adatait, hogy elkerüljük a Fals Pozitív riasztást!
-    // (Feltételezzük, hogy a context.testerUserId tartalmazza a tester saját ID-ját)
-    let targetId = validIds.find(id => id !== context.testerUserId);
-    if (!targetId) targetId = validIds[0]; // Ha nincs más, kénytelenek vagyunk ezt használni
-
-    const testPath = path.replace(`{${paramName}}`, targetId);
-    const fullUrl = `${targetUrl}${testPath}`;
+    // 2. ID KIKERESÉSE (Szigorúan kategória alapján)
+    const candidatePaths = resolvePathParamCandidates(path, context.harvestedIds);
+    if (candidatePaths.length === 0) return findings;
 
     try {
-        const requestOptions = { 
-            method: method.toUpperCase(),
-            headers: {} 
-        };
-
-        let payloadStr = "";
-        
-        // 3. DINAMIKUS PAYLOAD GENERÁLÁS ADATMÓDOSÍTÓ KÉRÉSEKHEZ
-        if (['POST', 'PUT', 'PATCH'].includes(requestOptions.method)) {
+        let lastValidationStatus = null;
+        for (const testPath of candidatePaths) {
+            const requestOptions = { method: method.toUpperCase(), headers: {} };
+            let payloadStr = "";
             const schema = operation.requestBody?.content?.['application/json']?.schema;
-            const dynamicPayload = generateMockPayloadFromSchema(schema);
-            
-            payloadStr = JSON.stringify(dynamicPayload);
-            requestOptions.body = payloadStr;
-            requestOptions.headers['Content-Type'] = 'application/json';
-        }
 
-        // TÁMADÁS INDÍTÁSA a mezei tester tokennel
-        const response = await smartFetch(fullUrl, requestOptions, context, 'tester');
-        const status = response.status;
-        
-        // A válasz JSON kiolvasása a pontosabb heurisztikához
-        let responseBody = "";
-        try { responseBody = await response.text(); } catch (e) {}
+            if (['POST', 'PUT', 'PATCH'].includes(requestOptions.method) && schema) {
+                const dynamicPayload = generateMockPayloadFromSchema(schema, context.spec);
+                payloadStr = JSON.stringify(dynamicPayload);
+                requestOptions.body = payloadStr;
+                requestOptions.headers['Content-Type'] = 'application/json';
+            }
 
-        // 4. BOMBABIZTOS KIÉRTÉKELÉS
-        
-        // 400 Bad Request vagy 422 Unprocessable Entity esetén a teszt INCONCLUSIVE (Eredménytelen)
-        if (status === 400 || status === 422) {
-            console.warn(`[BOLA Warning] A ${path} végpont 400-as validációs hibát dobott. A BOLA nem igazolható, az API eldobta a formátumot.`);
-            return findings;
-        }
+            const response = await smartFetch(
+                `${targetUrl.replace(/\/$/, '')}${testPath}`,
+                requestOptions,
+                context,
+                'tester'
+            );
+            const status = response.status;
+            let responseBody = "";
+            try { responseBody = await response.text(); } catch (e) {}
 
-        if (status >= 200 && status < 300) {
+            if (status === 400 || status === 422) {
+                lastValidationStatus = status;
+                continue;
+            }
+
+            const resolvedParts = testPath.split('/').filter(Boolean);
+            const parameterIndex = path.split('/').filter(Boolean).findIndex(part => part === `{${paramName}}`);
+            const targetId = resolvedParts[parameterIndex];
+            if (status >= 300 && status < 500) {
+                return findings;
+            }
+
+            if (status >= 200 && status < 300) {
             // "Ál-Sikeres" 200 OK szűrése: Ha a válaszban benne van, hogy error vagy unauthorized, az valójában védett!
             const bodyLower = responseBody.toLowerCase();
             if (bodyLower.includes('error') || bodyLower.includes('unauthorized') || bodyLower.includes('denied')) {
-                return findings; // Fals pozitív megakadályozva
+                    return findings;
             }
 
             findings.push({
@@ -99,8 +116,9 @@ export async function checkApi1Bola(endpoint, context) {
                 description: `BOLA (IDOR) sebezhetőség igazolva. A jogosulatlan (tester) felhasználó teljes értékű hozzáférést/módosítási jogot kapott a(z) ${targetId} entitáshoz. (HTTP ${status})`,
                 payloadUsed: payloadStr ? `Path: ${paramName}=${targetId} | Body: ${payloadStr}` : `Path: ${paramName}=${targetId}`
             });
-        } 
-        else if (status >= 500) {
+            return findings;
+            }
+            if (status >= 500) {
             findings.push({
                 owaspCategory: 'API1:2023',
                 endpoint: path,
@@ -110,6 +128,12 @@ export async function checkApi1Bola(endpoint, context) {
                 description: `Szerver összeomlás (HTTP ${status}) egy idegen azonosító lekérésekor. Valószínűleg hiányzó objektumszintű jogosultság-ellenőrzés okozta a kivételt a kódban.`,
                 payloadUsed: `Path paraméter: ${paramName}=${targetId}`
             });
+                return findings;
+            }
+        }
+
+        if (lastValidationStatus !== null) {
+            console.warn(`[BOLA Warning] A ${path} minden kipróbált ID-val ${lastValidationStatus}-as validációs választ adott; a BOLA nem igazolható.`);
         }
         
     } catch (error) {

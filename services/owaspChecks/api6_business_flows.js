@@ -1,4 +1,5 @@
-import { smartFetch } from '../apiClient.js';
+import { smartFetch } from '../smartFetch.js';
+import { resolvePathParams } from '../pathResolver.js';
 
 /**
  * OWASP API6:2023 – Unrestricted Access to Sensitive Business Flows
@@ -26,13 +27,9 @@ export async function checkApi6BusinessFlows(endpoint, context) {
         return findings;
     }
 
-    const resolvedPath = path.replace(/\{([^}]+)\}/g, (_, paramName) => {
-        const pathParts = path.split('/').filter(Boolean);
-        const paramIndex = pathParts.findIndex(part => part.includes('{'));
-        let resourceCategory = paramIndex > 0 ? pathParts[paramIndex - 1] : '';
-        const validIds = harvestedIds[resourceCategory] || [];
-        return validIds.length > 0 ? validIds[0] : '1';
-    });
+// --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
+    const resolvedPath = resolvePathParams(path, harvestedIds);
+    if (!resolvedPath) return findings;
 
     const fullUrl = `${targetUrl.replace(/\/$/, '')}${resolvedPath}`;
     const schema = operation.requestBody?.content?.['application/json']?.schema;
@@ -43,10 +40,14 @@ export async function checkApi6BusinessFlows(endpoint, context) {
         const successStatuses = [];
 
         for (let i = 0; i < repeatCount; i++) {
+            const payload = {
+                ...basePayload,
+                ...createUniqueFlowValues(basePayload, i)
+            };
             const requestOptions = {
                 method: upperMethod,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(basePayload)
+                body: JSON.stringify(payload)
             };
 
             const response = await smartFetch(fullUrl, requestOptions, context, 'tester');
@@ -67,6 +68,19 @@ export async function checkApi6BusinessFlows(endpoint, context) {
                 description: `Unrestricted Access to Sensitive Business Flows: Az üzletileg érzékeny végpont ${repeatCount}/${repeatCount} ismételt hívást is korlátozás nélkül kiszolgált (nincs 429/409/403 visszautasítás). Automatizált visszaélés (pl. kuponhalmozás, spam regisztráció) lehetséges.`,
                 payloadUsed: `${repeatCount}x ${method} ${resolvedPath} | Body: ${JSON.stringify(basePayload)}`
             });
+        }
+
+        function createUniqueFlowValues(payload, attempt) {
+            const suffix = `${Date.now()}_${attempt}`;
+            const values = {};
+            for (const key of Object.keys(payload)) {
+                const normalizedKey = key.toLowerCase();
+                if (normalizedKey.includes('email')) values[key] = `flow_test_${suffix}@scanner.invalid`;
+                if (normalizedKey.includes('username') || normalizedKey === 'user') {
+                    values[key] = `flow_test_${suffix}`;
+                }
+            }
+            return values;
         }
 
     } catch (error) {

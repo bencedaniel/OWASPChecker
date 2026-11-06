@@ -1,4 +1,5 @@
-import { smartFetch } from '../apiClient.js';
+import { smartFetch } from '../smartFetch.js';
+import { resolvePathParams } from '../pathResolver.js';
 
 /**
  * OWASP API7:2023 – Server Side Request Forgery (SSRF)
@@ -21,13 +22,9 @@ export async function checkApi7Ssrf(endpoint, context) {
         return findings;
     }
 
-    const resolvedPath = path.replace(/\{([^}]+)\}/g, (_, paramName) => {
-        const pathParts = path.split('/').filter(Boolean);
-        const paramIndex = pathParts.findIndex(part => part.includes('{'));
-        let resourceCategory = paramIndex > 0 ? pathParts[paramIndex - 1] : '';
-        const validIds = harvestedIds[resourceCategory] || [];
-        return validIds.length > 0 ? validIds[0] : '1';
-    });
+// --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
+    const resolvedPath = resolvePathParams(path, harvestedIds);
+    if (!resolvedPath) return findings;
 
     const fullUrl = `${targetUrl.replace(/\/$/, '')}${resolvedPath}`;
     const basePayload = generateMockPayloadFromSchema(schema);

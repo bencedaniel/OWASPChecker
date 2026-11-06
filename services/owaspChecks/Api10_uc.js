@@ -1,4 +1,5 @@
-import { smartFetch } from '../apiClient.js';
+import { smartFetch } from '../smartFetch.js';
+import { resolvePathParams } from '../pathResolver.js';
 
 /**
  * OWASP API10:2023 – Unsafe Consumption of APIs (Nem biztonságos API-fogyasztás)
@@ -50,13 +51,9 @@ export async function checkApi10UnsafeConsumption(endpoint, context) {
     }
 
     // --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
-    const resolvedPath = path.replace(/\{([^}]+)\}/g, (_, paramName) => {
-        const pathParts = path.split('/').filter(Boolean);
-        const paramIndex = pathParts.findIndex(part => part.includes('{'));
-        let resourceCategory = paramIndex > 0 ? pathParts[paramIndex - 1] : '';
-        const validIds = harvestedIds[resourceCategory] || [];
-        return validIds.length > 0 ? validIds[0] : '1';
-    });
+// --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
+    const resolvedPath = resolvePathParams(path, harvestedIds);
+    if (!resolvedPath) return findings;
 
     const fullUrl = `${targetUrl.replace(/\/$/, '')}${resolvedPath}`;
 

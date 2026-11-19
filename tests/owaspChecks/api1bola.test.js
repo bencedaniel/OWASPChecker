@@ -190,4 +190,18 @@ describe('OWASP API1:2023 - BOLA Modul Unit Tesztek', () => {
         expect(findings[0].confidence).toBe('warning');
         expect(findings[0].description).toContain('Szerver összeomlás');
     });
+
+    it('9. Safe módban nem küld DELETE kérést és nem generál találatot', async () => {
+        mockContext.allowDestructive = false;
+        const endpoint = {
+            path: '/api/users/{id}',
+            method: 'DELETE',
+            operation: {}
+        };
+
+        const findings = await checkApi1Bola(endpoint, mockContext);
+
+        expect(findings).toHaveLength(0);
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
 });

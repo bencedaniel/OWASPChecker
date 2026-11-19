@@ -26,6 +26,10 @@ export async function brokenAuthCheck(endpoint, context) {
     const { path, method, operation } = endpoint;
     const { targetUrl, harvestedIds, spec } = context;
 
+    if (method.toUpperCase() === 'DELETE' && context.allowDestructive !== true) {
+        return findings;
+    }
+
     const baseUrl = targetUrl.replace(/\/$/, '');
 
     // --- 1. TOKEN NÉLKÜLI HITELESÍTÉS-MEGKERÜLÉS VIZSGÁLATA ---

@@ -102,6 +102,7 @@ Example request:
 {
   "targetUrl": "https://target.example",
   "openApiSpecUrl": "https://target.example/api-docs.json",
+  "allowDestructive": false,
   "testUserCredentials": {
     "email": "tester@example.test",
     "password": "test-password"

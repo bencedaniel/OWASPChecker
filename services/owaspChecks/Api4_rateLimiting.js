@@ -29,6 +29,10 @@ export async function checkApi4RateLimit(endpoint, context) {
     const { path, method } = endpoint;
     const { targetUrl, harvestedIds } = context;
 
+    if (method.toUpperCase() === 'DELETE' && context.allowDestructive !== true) {
+        return findings;
+    }
+
     if (method.toUpperCase() === 'DELETE' && /(^|\/)me(\/|$)/i.test(path)) {
         return findings;
     }

@@ -31,6 +31,10 @@ export async function checkApi8SecurityMisconfiguration(endpoint, context) {
     const { path, method, operation } = endpoint;
     const { targetUrl, harvestedIds } = context;
 
+    if (method.toUpperCase() === 'DELETE' && context.allowDestructive !== true) {
+        return findings;
+    }
+
     if (method.toUpperCase() === 'DELETE' && /(^|\/)me(\/|$)/i.test(path)) {
         return findings;
     }

@@ -53,6 +53,10 @@ export async function checkApi1Bola(endpoint, context) {
     const { path, method, operation } = endpoint;
     const { targetUrl } = context;
 
+    if (method.toUpperCase() === 'DELETE' && context.allowDestructive !== true) {
+        return findings;
+    }
+
     // 1. RELEVANCIA VIZSGÁLAT
     const pathParamRegex = /{([^}]+)}/g;
     const match = pathParamRegex.exec(path);

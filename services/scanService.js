@@ -78,6 +78,7 @@ export async function runScan(reportId) {
             targetUrl: report.targetUrl, 
             spec,
             report,
+            allowDestructive: report.allowDestructive === true,
             adminToken,      
             testerToken,     
             harvestedIds

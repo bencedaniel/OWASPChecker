@@ -9,12 +9,33 @@ import { getAuthToken } from './reconEngine.js';
  * @param {string} role - Milyen szerepkörrel küldjük a kérést? ('admin' vagy 'tester')
  */
 export async function smartFetch(url, options, context, role = 'tester') {
+    const method = (options?.method || 'GET').toUpperCase();
+
+    if (method === 'DELETE' && context?.allowDestructive !== true) {
+        console.warn(`[smartFetch] Destruktív DELETE kérés blokkolva: ${method} ${url}`);
+        const blockedResponse = new Response(
+            JSON.stringify({
+                blocked: true,
+                reason: 'Destructive DELETE requests are disabled by scanner safe mode'
+            }),
+            {
+                status: 405,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Scanner-Blocked': 'delete'
+                }
+            }
+        );
+        blockedResponse.blockedBySafety = true;
+        return blockedResponse;
+    }
+
     // 1. Kiválasztjuk az aktuális tokent a kért szerepkör alapján
     let currentToken = role === 'admin' ? context.adminToken : context.testerToken;
     
     // Alapértelmezett headerek beállítása a token felhasználásával
     const headers = {
-        ...options.headers,
+        ...options?.headers,
         'Authorization': `Bearer ${currentToken}`,
         'Content-Type': 'application/json'
     };

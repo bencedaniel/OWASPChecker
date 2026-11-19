@@ -46,6 +46,10 @@ const scanReportSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    allowDestructive: {
+        type: Boolean,
+        default: false
+    },
     status: {
         type: String,
         enum: ['pending', 'running', 'completed', 'failed'],

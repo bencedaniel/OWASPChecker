@@ -47,6 +47,9 @@ export async function checkApi10UnsafeConsumption(endpoint, context) {
     const { targetUrl, harvestedIds } = context;
 
     const upperMethod = method.toUpperCase();
+    if (upperMethod === 'DELETE' && context.allowDestructive !== true) {
+        return findings;
+    }
     const lowerPath = path.toLowerCase();
     const summaryOrDesc = `${operation?.summary || ''} ${operation?.description || ''}`.toLowerCase();
 

@@ -33,6 +33,7 @@ describe('OWASP API5:2023 - BFLA Modul Unit Tesztek', () => {
     });
 
     it('2. Vissza kell adnia a sebezhetőséget, ha a szerver kiszolgálja az admint a mezei tokennel (Sebezhető eset)', async () => {
+        mockContext.allowDestructive = true;
         const endpoint = {
             path: '/api/admin/delete-user',
             method: 'DELETE',
@@ -54,6 +55,7 @@ describe('OWASP API5:2023 - BFLA Modul Unit Tesztek', () => {
     });
 
     it('3. Üres tömbbel kell visszatérnie, ha a szerver helyesen 403-at ad (Biztonságos eset)', async () => {
+        mockContext.allowDestructive = true;
         const endpoint = {
             path: '/api/admin/delete-user',
             method: 'DELETE',
@@ -69,5 +71,19 @@ describe('OWASP API5:2023 - BFLA Modul Unit Tesztek', () => {
 
         expect(fetchSpy).toHaveBeenCalledOnce();
         expect(findings).toHaveLength(0); 
+    });
+
+    it('4. Safe módban nem küld és nem értékel DELETE-et', async () => {
+        mockContext.allowDestructive = false;
+        const endpoint = {
+            path: '/api/admin/delete-user',
+            method: 'DELETE',
+            operation: { security: [{ bearerAuth: [] }] }
+        };
+
+        const findings = await checkApi5Bfla(endpoint, mockContext);
+
+        expect(findings).toHaveLength(0);
+        expect(fetchSpy).not.toHaveBeenCalled();
     });
 });

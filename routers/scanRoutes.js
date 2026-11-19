@@ -49,6 +49,10 @@ router.use(authenticateToken);
  *               openApiSpecUrl:
  *                 type: string
  *                 example: https://target.example/api-docs.json
+ *               allowDestructive:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Engedélyezi a destruktív DELETE kéréseket. Alapértelmezetten false.
  *     responses:
  *       202:
  *         description: A vizsgálat elindult.

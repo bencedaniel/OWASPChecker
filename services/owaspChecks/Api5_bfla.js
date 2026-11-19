@@ -73,6 +73,10 @@ export async function checkApi5Bfla(endpoint, context) {
     const { path, method, operation } = endpoint;
     const { targetUrl, harvestedIds, spec } = context;
 
+    if (method.toUpperCase() === 'DELETE' && context.allowDestructive !== true) {
+        return findings;
+    }
+
     // --- 3. RELEVANCIA VIZSGÁLAT ---
     // A) Csak azokat a végpontokat vizsgáljuk, amelyek neve/útvonala adminisztratív jellegű
     const lowerPath = path.toLowerCase();

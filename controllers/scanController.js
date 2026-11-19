@@ -14,7 +14,11 @@ function isHttpUrl(value) {
 // POST /api/scans – új vizsgálat indítása
 export const startScan = async (req, res) => {
     try {
-        const { targetUrl, openApiSpecUrl, testUserCredentials, testAdminCredentials } = req.body;
+        const { targetUrl, openApiSpecUrl, testUserCredentials, testAdminCredentials, allowDestructive } = req.body;
+
+        if (allowDestructive !== undefined && typeof allowDestructive !== 'boolean') {
+            return res.status(400).json({ message: 'Az allowDestructive mező boolean érték kell legyen.' });
+        }
 
         if (!isHttpUrl(targetUrl)) {
             return res.status(400).json({ message: 'Érvényes targetUrl megadása kötelező (http/https).' });
@@ -37,6 +41,7 @@ export const startScan = async (req, res) => {
         const report = await ScanReport.create({
             targetUrl,
             openApiSpecUrl: specUrl,
+            allowDestructive: allowDestructive === true,
             initiatedBy: req.user.id,
             testUserCredentials: normalizedUserCredentials,
             testAdminCredentials: normalizedAdminCredentials,

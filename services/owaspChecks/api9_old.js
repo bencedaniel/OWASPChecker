@@ -31,6 +31,10 @@ export async function checkApi9ImproperInventory(endpoint, context) {
     const { path, method, operation } = endpoint;
     const { targetUrl, harvestedIds } = context;
 
+    if (method.toUpperCase() === 'DELETE' && context.allowDestructive !== true) {
+        return findings;
+    }
+
     const lowerPath = path.toLowerCase();
 
     // --- 3. RELEVANCIA VIZSGÁLAT ÉS TESZTELÉS ---

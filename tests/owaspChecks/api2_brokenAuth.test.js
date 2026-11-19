@@ -103,6 +103,7 @@ describe('OWASP API2:2023 - Broken Authentication Modul Unit Tesztek', () => {
     });
 
     it('5. Gyanús viselkedés (Low): A védett végpont token nélkül nem 401/403, hanem pl. 500-as hibát dob', async () => {
+        mockContext.allowDestructive = true;
         const endpoint = {
             path: '/api/users/{id}',
             method: 'DELETE',

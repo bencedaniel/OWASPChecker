@@ -1,16 +1,13 @@
+import { resolvePathParams } from '../pathResolver.js';
+
 /**
- * OWASP API2:2023 – Broken Authentication (hiányzó hitelesítés) teszt
- *
- * A modul azt vizsgálja, hogy egy hitelesítést elváró végpont token NÉLKÜL is
- * kiszolgál-e kérést. Ha igen, a hitelesítés megkerülhető.
- *
- * FONTOS: Ez a teszt szándékosan a natív `fetch`-et használja, NEM a smartFetch-et!
- * A smartFetch 401-nél automatikusan újrahitelesítene egy érvényes tokennel, ami
- * tönkretenné a tesztet (egy biztonságos végpontot is sebezhetőnek jelezne).
- * Itt pont az a lényeg, hogy SEMMILYEN token ne menjen a kérésre.
+ * OWASP API2:2023 – Broken Authentication átfogó ellenőrzés:
+ * 1. Védett végpontok elérése token nélkül (natív fetch, smartFetch megkerülésével).
+ * 2. Bejelentkezési (login) végpontok brute-force / rate-limit / account lockout hiányának vizsgálata.
+ * 3. Sikeres bejelentkezésnél visszaadott JWT token lejárati idejének (TTL) ellenőrzése.
  *
  * @param {Object} endpoint Az aktuálisan vizsgált végpont adatai
- * @param {string} endpoint.path Az API útvonal (pl. "/api/users/{id}")
+ * @param {string} endpoint.path Az API útvonal (pl. "/api/auth/login", "/api/users/{id}")
  * @param {string} endpoint.method HTTP metódus nagybetűvel (pl. "GET", "POST")
  * @param {Object} endpoint.operation A végpont OpenAPI leírása
  *
@@ -18,83 +15,230 @@
  * @param {string} context.targetUrl A vizsgált szerver alap URL-je
  * @param {Object} context.spec A teljes OpenAPI specifikáció
  * @param {Object} context.harvestedIds A Recon fázisban begyűjtött valid azonosítók
+ * @param {Object} [context.credentials] Opcionális hitelesítő adatok ({ user, admin })
+ * @param {Object} [context.testUserCredentials] Opcionális teszt felhasználó ({ username/email, password })
+ * @param {Object} [context.testAdminCredentials] Opcionális teszt admin ({ username/email, password })
  *
- * @returns {Promise<Array<Object>>} A megtalált sebezhetőségek tömbje (üres, ha nincs találat)
+ * @returns {Promise<Array<Object>>} A megtalált sebezhetőségek tömbje
  */
 export async function brokenAuthCheck(endpoint, context) {
-    // 1. Üres tömb a találatoknak (kötelező visszatérési érték)
     const findings = [];
-
-    // 2. Szükséges adatok kinyerése
     const { path, method, operation } = endpoint;
-    const { targetUrl, harvestedIds } = context;
+    const { targetUrl, harvestedIds, spec } = context;
 
-    // --- 3. RELEVANCIA VIZSGÁLAT ---
-    // Csak azokat a végpontokat nézzük, amelyek hitelesítést várnak el.
-    const requiresAuth = endpointRequiresAuth(operation, context.spec);
-    if (!requiresAuth) {
-        return findings;
+    const baseUrl = targetUrl.replace(/\/$/, '');
+
+    // --- 1. TOKEN NÉLKÜLI HITELESÍTÉS-MEGKERÜLÉS VIZSGÁLATA ---
+    const requiresAuth = endpointRequiresAuth(operation, spec);
+    if (requiresAuth) {
+        const resolvedPath = resolvePathParams(path, harvestedIds);
+        if (resolvedPath) {
+            const fullUrl = `${baseUrl}${resolvedPath}`;
+            try {
+                const requestOptions = { method, headers: {} };
+
+                if (['POST', 'PUT', 'PATCH'].includes(method)) {
+                    requestOptions.body = JSON.stringify({});
+                    requestOptions.headers['Content-Type'] = 'application/json';
+                }
+
+                // Szándékosan natív fetch Authorization fejléc és smartFetch nélkül
+                const response = await fetch(fullUrl, requestOptions);
+
+                let responseBody = '';
+                try {
+                    responseBody = await response.text();
+                } catch (_) {}
+
+                if (response.status >= 200 && response.status < 300) {
+                    const bodyLower = responseBody.toLowerCase();
+                    const looksLikeAuthError =
+                        bodyLower.includes('error') ||
+                        bodyLower.includes('unauthorized') ||
+                        bodyLower.includes('denied') ||
+                        bodyLower.includes('unauthenticated');
+
+                    if (!looksLikeAuthError) {
+                        findings.push({
+                            owaspCategory: 'API2:2023',
+                            endpoint: path,
+                            method,
+                            severity: 'High',
+                            confidence: 'danger',
+                            description: `A végpont hitelesítést ír elő, mégis token nélkül is ${response.status} státusszal válaszolt. A hitelesítés megkerülhető.`,
+                            payloadUsed: `${method} ${resolvedPath} (Authorization fejléc nélkül)`
+                        });
+                    }
+                } else if (response.status !== 401 && response.status !== 403) {
+                    findings.push({
+                        owaspCategory: 'API2:2023',
+                        endpoint: path,
+                        method,
+                        severity: 'Low',
+                        confidence: 'warning',
+                        description: `A végpont token nélkül nem 401/403, hanem ${response.status} státusszal válaszolt. Érdemes kézzel ellenőrizni a hitelesítés helyességét.`,
+                        payloadUsed: `${method} ${resolvedPath} (Authorization fejléc nélkül)`
+                    });
+                }
+            } catch (error) {
+                console.error(`[API2 Modul Hiba] A(z) ${path} végpont tesztelése közben:`, error.message);
+            }
+        }
     }
 
-    // --- 4. CÉLPONT ADATOK ELŐKÉSZÍTÉSE ---
-    const resolvedPath = resolvePathParams(path, harvestedIds);
-    if (!resolvedPath) return findings;
-    const fullUrl = `${targetUrl.replace(/\/$/, '')}${resolvedPath}`;
+    // --- 2. LOGIN VÉGPONT: BRUTE-FORCE / RATE-LIMIT / LOCKOUT ÉS JWT TTL ---
+    if (method === 'POST' && /login/i.test(path)) {
+        const loginFindings = await checkLoginEndpointWeaknesses(path, method, baseUrl, context);
+        findings.push(...loginFindings);
+    }
 
-    // --- 5. TÁMADÁS VÉGREHAJTÁSA: kérés token NÉLKÜL, natív fetch-csel ---
-    try {
-        const requestOptions = { method, headers: {} };
+    return findings;
+}
 
-        // Ha a metódus törzset vár, egy üres JSON-t küldünk, hogy ne a hiányzó
-        // body miatt kapjunk hibát, hanem tényleg a hitelesítés dőljön el.
-        if (['POST', 'PUT', 'PATCH'].includes(method)) {
-            requestOptions.body = JSON.stringify({});
-            requestOptions.headers['Content-Type'] = 'application/json';
-        }
+/**
+ * Megvizsgálja, hogy a login végpont védve van-e ismételt sikertelen kísérletekkel szemben,
+ * és ellenőrzi a sikeres belépéskor kapott JWT token lejárati idejét.
+ */
+async function checkLoginEndpointWeaknesses(path, method, baseUrl, context) {
+    const findings = [];
+    const fullUrl = `${baseUrl}${path}`;
 
-        // Szándékosan NINCS Authorization fejléc, és NINCS smartFetch.
-        const response = await fetch(fullUrl, requestOptions);
+    const userCreds = context.credentials?.user || context.testUserCredentials;
+    const adminCreds = context.credentials?.admin || context.testAdminCredentials;
 
-        // --- 6. KIÉRTÉKELÉS ÉS RIPORTÁLÁS ---
-        let responseBody = "";
-        try { responseBody = await response.text(); } catch (e) {}
+    const probeEmail =
+        userCreds?.email ||
+        userCreds?.username ||
+        adminCreds?.email ||
+        adminCreds?.username ||
+        'test@mail.hu';
 
-        if (response.status >= 200 && response.status < 300) {
-            const bodyLower = responseBody.toLowerCase();
-            // Ha a 200-as státusz ellenére a tartalom hibaüzenetet takar, akkor a hitelesítés valójában működik!
-            if (bodyLower.includes('error') || bodyLower.includes('unauthorized') || bodyLower.includes('denied') || bodyLower.includes('unauthenticated')) {
-                // Ez nem sebezhetőség, átugorjuk
-                return findings;
+    const attempts = 12;
+    let rateLimitedOrLocked = false;
+    let unexpectedStatus = null;
+
+    for (let i = 0; i < attempts; i++) {
+        try {
+            const response = await fetch(fullUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: probeEmail,
+                    password: `invalid_probe_${i}_${Date.now()}`
+                })
+            });
+
+            const bodyText = await response.text().catch(() => '');
+            const bodyLower = bodyText.toLowerCase();
+
+            if (
+                response.status === 429 ||
+                bodyLower.includes('rate limit') ||
+                bodyLower.includes('too many requests') ||
+                bodyLower.includes('locked') ||
+                bodyLower.includes('lockout') ||
+                bodyLower.includes('zárol')
+            ) {
+                rateLimitedOrLocked = true;
+                break;
             }
 
-            findings.push({
-                owaspCategory: 'API2:2023',
-                endpoint: path,
-                method: method,
-                severity: 'High',
-                confidence: 'danger',
-                description: `A végpont hitelesítést ír elő, mégis token nélkül is ${response.status} státusszal válaszolt. A hitelesítés megkerülhető.`,
-                payloadUsed: `${method} ${resolvedPath} (Authorization fejléc nélkül)`
-            });
-        } else if (response.status !== 401 && response.status !== 403) {
-            findings.push({
-                owaspCategory: 'API2:2023',
-                endpoint: path,
-                method: method,
-                severity: 'Low',
-                confidence: 'warning',
-                description: `A végpont token nélkül nem 401/403, hanem ${response.status} státusszal válaszolt. Érdemes kézzel ellenőrizni a hitelesítés helyességét.`,
-                payloadUsed: `${method} ${resolvedPath} (Authorization fejléc nélkül)`
-            });
+            if (response.status !== 401 && unexpectedStatus === null) {
+                unexpectedStatus = response.status;
+            }
+        } catch (error) {
+            console.error(`[API2 Login Modul Hiba] ${path} (brute-force teszt):`, error.message);
+            break;
         }
-        // 401 vagy 403 esetén a végpont helyesen védett → nincs találat.
-
-    } catch (error) {
-        console.error(`[API2 Modul Hiba] A(z) ${path} végpont tesztelése közben:`, error.message);
     }
 
-    // 7. Visszatérés a találatokkal
+    if (!rateLimitedOrLocked) {
+        findings.push({
+            owaspCategory: 'API2:2023',
+            endpoint: path,
+            method,
+            severity: 'Medium',
+            confidence: 'warning',
+            description: `A bejelentkezési végpont ${attempts} gyors, hibás jelszavas kérés után sem alkalmazott rate limitinget (HTTP 429) vagy fiókzárolást, így brute-force támadásnak lehet kitéve.`,
+            payloadUsed: `${attempts}x POST ${path} hibás jelszóval (email: ${probeEmail})`
+        });
+    }
+
+    if (unexpectedStatus !== null) {
+        findings.push({
+            owaspCategory: 'API2:2023',
+            endpoint: path,
+            method,
+            severity: 'Low',
+            confidence: 'warning',
+            description: `A sikertelen bejelentkezési kérés 401 helyett ${unexpectedStatus} státuszkódot adott vissza.`,
+            payloadUsed: `POST ${path} hibás jelszóval (email: ${probeEmail})`
+        });
+    }
+
+    // JWT lejárati idő (exp - iat) ellenőrzése valid teszt hitelesítő adatokkal
+    const validCreds = userCreds || adminCreds;
+    const validIdentifier = validCreds?.email || validCreds?.username;
+    if (validIdentifier && validCreds?.password) {
+        try {
+            const response = await fetch(fullUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: validIdentifier,
+                    password: validCreds.password
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json().catch(() => null);
+                const ttlSeconds = extractJwtTtlSeconds(data?.token);
+
+                // 3600 másodperc (1 óra) feletti élettartamot hosszú lejáratként jelöljük
+                const maxRecommendedTtlSeconds = 3600;
+                if (typeof ttlSeconds === 'number' && ttlSeconds > maxRecommendedTtlSeconds) {
+                    const hours = Math.round((ttlSeconds / 3600) * 10) / 10;
+                    findings.push({
+                        owaspCategory: 'API2:2023',
+                        endpoint: path,
+                        method,
+                        severity: 'Low',
+                        confidence: 'warning',
+                        description: `A bejelentkezéskor kiadott JWT token élettartama (${ttlSeconds} mp / ~${hours} óra) meghaladja az ajánlott 1 órát, ami növeli a visszaélés kockázatát.`,
+                        payloadUsed: `POST ${path} (JWT exp - iat elemzés)`
+                    });
+                }
+            }
+        } catch (error) {
+            console.error(`[API2 Login Modul Hiba] ${path} (JWT TTL teszt):`, error.message);
+        }
+    }
+
     return findings;
+}
+
+/**
+ * Aláírás-ellenőrzés nélkül dekódolja a JWT payloadot, és visszaadja az (exp - iat) értéket másodpercben.
+ */
+function extractJwtTtlSeconds(token) {
+    if (typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
+    try {
+        const base64Url = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = base64Url.padEnd(base64Url.length + ((4 - (base64Url.length % 4)) % 4), '=');
+        const payloadJson = Buffer.from(padded, 'base64').toString('utf8');
+        const payload = JSON.parse(payloadJson);
+
+        if (typeof payload.exp === 'number' && typeof payload.iat === 'number') {
+            return payload.exp - payload.iat;
+        }
+    } catch (_) {
+        return null;
+    }
+
+    return null;
 }
 
 /**
@@ -104,10 +248,7 @@ export async function brokenAuthCheck(endpoint, context) {
  */
 function endpointRequiresAuth(operation, spec) {
     if (Array.isArray(operation?.security)) {
-        // Üres tömb ([]) kifejezetten kikapcsolja a hitelesítést erre a műveletre
         return operation.security.length > 0;
     }
     return Array.isArray(spec?.security) && spec.security.length > 0;
 }
-
-import { resolvePathParams } from '../pathResolver.js';
